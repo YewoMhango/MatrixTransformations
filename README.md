@@ -1,2 +1,2 @@
-# Conway's Game of Life
-Conway's Game of Life written in Elm. Live online version [here](https://yewomhango.github.io/GameOfLife/index.html)
+# Matrix Transformations Visualization
+A small web app for visualizing geometric transformations using a 2D transformation Matrix, written in Elm. Live online version [here](https://yewomhango.github.io/MatrixTransformations/index.html)
