@@ -6,10 +6,12 @@ import Canvas.Settings exposing (..)
 import Canvas.Settings.Text exposing (TextAlign(..), align, font)
 import Color
 import Debug exposing (toString)
-import Html exposing (Html, br, div, input, table, td, tr)
-import Html.Attributes exposing (class, id, step, type_, value)
+import Html exposing (Html, br, div, input, option, select, table, td, tr)
+import Html.Attributes exposing (id, selected, step, type_, value)
 import Html.Events exposing (onInput)
 import Matrix exposing (..)
+import Polygon exposing (Polygon, getBoundsForMultiplePolygons)
+import SelectedShape exposing (SelectedShape(..), getShapePolygon, mapShapeNameToShape, mapShapeToShapeName, validShapes)
 
 
 main : Program () Model Msg
@@ -23,25 +25,8 @@ main =
 
 type alias Model =
     { matrix : Matrix
-    , original : Polygon
+    , selectedShape : SelectedShape
     , transformed : Polygon
-    }
-
-
-fShapedPolygon : Polygon
-fShapedPolygon =
-    { start = ( 0, 0 )
-    , others =
-        [ ( 1, 0 )
-        , ( 1, 2 )
-        , ( 2, 2 )
-        , ( 2, 3 )
-        , ( 1, 3 )
-        , ( 1, 4 )
-        , ( 3, 4 )
-        , ( 3, 5 )
-        , ( 0, 5 )
-        ]
     }
 
 
@@ -54,10 +39,9 @@ init : Model
 init =
     { matrix =
         originalMatrix
-    , original =
-        fShapedPolygon
+    , selectedShape = Arrow
     , transformed =
-        transformPolygon originalMatrix fShapedPolygon
+        transformPolygon originalMatrix <| getShapePolygon Arrow
     }
 
 
@@ -66,6 +50,7 @@ type Msg
     | ChangedSecond String
     | ChangedThird String
     | ChangedFourth String
+    | ChangedShape String
 
 
 update : Msg -> Model -> Model
@@ -83,6 +68,19 @@ update msg model =
         ChangedFourth value ->
             updateMatrixValue model 1 1 value
 
+        ChangedShape shapeName ->
+            let
+                selectedShape =
+                    mapShapeNameToShape shapeName
+                        |> Maybe.withDefault F
+            in
+            { model
+                | selectedShape = selectedShape
+                , transformed =
+                    getShapePolygon selectedShape
+                        |> transformPolygon model.matrix
+            }
+
 
 updateMatrixValue : Model -> Int -> Int -> String -> Model
 updateMatrixValue model x y value =
@@ -99,7 +97,8 @@ updateMatrixValue model x y value =
     { model
         | matrix = matrix
         , transformed =
-            transformPolygon matrix model.original
+            transformPolygon matrix <|
+                getShapePolygon model.selectedShape
     }
 
 
@@ -133,11 +132,23 @@ view model =
                             ]
                         ]
                     ]
+                , td []
+                    [ select [ onInput ChangedShape ]
+                        (List.map
+                            (renderShapeOption model.selectedShape)
+                            validShapes
+                        )
+                    ]
                 ]
             ]
         , br [] []
         , renderCanvas model
         ]
+
+
+renderShapeOption : SelectedShape -> String -> Html msg
+renderShapeOption selectedShape name =
+    option [ value name, selected <| mapShapeToShapeName selectedShape == name ] [ Html.text name ]
 
 
 renderNumberInput : (String -> Msg) -> Int -> Int -> Model -> Html Msg
@@ -160,7 +171,10 @@ renderCanvas : Model -> Html Msg
 renderCanvas model =
     let
         bounds =
-            getBoundsForMultiplePolygons [ model.original, model.transformed ]
+            getBoundsForMultiplePolygons
+                [ getShapePolygon model.selectedShape
+                , model.transformed
+                ]
 
         ySpan =
             bounds.top - bounds.bottom
@@ -205,7 +219,7 @@ renderCanvas model =
             [ fill <| Color.rgba 0.5 1 0 0.3
             , stroke <| Color.rgba 0.5 1 0 0.6
             ]
-            [ renderPolygon model.original centerX centerY scale ]
+            [ renderPolygon (getShapePolygon model.selectedShape) centerX centerY scale ]
         , shapes
             [ fill <| Color.rgba 0.5 0 1 0.3
             , stroke <| Color.rgba 0.5 0 1 0.6
@@ -348,7 +362,7 @@ renderYLabels interval centerX centerY scale labelTickLength =
                             1
                         ]
                     , text
-                        [ font { size = fontSize, family = "Segoe UI" }
+                        [ font { size = fontSize, family = "sans-serif" }
                         , align Left
                         ]
                         ( centerX + toFloat labelTickLength + 1
@@ -363,99 +377,6 @@ renderYLabels interval centerX centerY scale labelTickLength =
                     ]
             )
         )
-
-
-type alias Polygon =
-    { start : Point
-    , others : List Point
-    }
-
-
-type alias Bounds =
-    { left : Float
-    , right : Float
-    , top : Float
-    , bottom : Float
-    }
-
-
-getPolygonBounds : Polygon -> Bounds
-getPolygonBounds polygon =
-    List.foldl
-        (\curr acc ->
-            let
-                ( x, y ) =
-                    curr
-            in
-            { left = min x acc.left
-            , right = max x acc.right
-            , top = max y acc.top
-            , bottom = min y acc.bottom
-            }
-        )
-        (pointToBounds polygon.start)
-        polygon.others
-
-
-combineTwoBounds : Bounds -> Bounds -> Bounds
-combineTwoBounds b1 b2 =
-    { left = min b1.left b2.left
-    , right = max b1.right b2.right
-    , top = max b1.top b2.top
-    , bottom = min b1.bottom b2.bottom
-    }
-
-
-getBoundsForMultiplePolygons : List Polygon -> Bounds
-getBoundsForMultiplePolygons polygons =
-    case polygons of
-        first :: rest ->
-            List.foldl
-                (\polygon bounds ->
-                    combineTwoBounds bounds <|
-                        getPolygonBounds polygon
-                )
-                (getPolygonBounds first)
-                rest
-
-        [] ->
-            pointToBounds ( 0, 0 )
-
-
-pointToBounds : Point -> Bounds
-pointToBounds point =
-    let
-        ( x, y ) =
-            point
-    in
-    { left = x
-    , right = x
-    , top = y
-    , bottom = y
-    }
-
-
-
--- matrixAsHtml : Matrix -> Html Msg
--- matrixAsHtml matrix =
---     table [ class "matrix" ]
---         (for 0
---             (getHeight matrix)
---             (\h ->
---                 tr []
---                     (for 0
---                         (getWidth matrix)
---                         (\w ->
---                             td []
---                                 [ Html.text <|
---                                     Debug.toString <|
---                                         Maybe.withDefault 0 <|
---                                             Matrix.getValue w h matrix
---                                 ]
---                         )
---                     )
---             )
---         )
 
 
 for : Int -> Int -> (Int -> a) -> List a
